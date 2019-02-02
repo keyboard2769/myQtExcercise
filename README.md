@@ -1,0 +1,2 @@
+# myQtExcercise
+qt cpp projects
