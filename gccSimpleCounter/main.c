@@ -1,26 +1,35 @@
 /* *
- * 
- * latest chapter: A95-location-and-order
- * 
+ * a counter count from zero to fifteen
  */
 
-#include <windows.h>
+/* * [NOTE]::to compile resource file:
+ * $ gcc -c -Wall -g %sourceFile%
+ * $ windres -i %resourceFile% -o %resourceObject%
+ * $ gcc -g -o %executableFile% %..ObjectFiles% -mwindows -D Unicode
+ * */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
 #include <assert.h>
+#include <windows.h>
 
 //=== constant
 
 #define null NULL
-#define APP_TITLE "ACPG-v0.01"
+#define APP_TITLE TEXT("ACPG-v0.01")
 
 enum ACTION_ID{
   ACTION_DUMMY,
   ACTION_ADD,
   ACTION_QUIT
 };
+
+//=== public
+
+static TCHAR cspbWorkingDirectory[MAX_PATH+1];
+static int cspbCallbackCounter=0;
 
 //=== utility
 
@@ -34,11 +43,22 @@ int fsPover(){
   return 0;
 }//+++
 
-void ccMsgbox(LPSTR pxLine){
+void ccMsgbox(LPCTSTR pxLine){
   MessageBox(null,pxLine,APP_TITLE,MB_OK);
 }//+++
 
-void ccComboBoxAddItem(HWND pxTarget, LPSTR pxItem){
+void ccMsgboxRaw(const char* pxRawLine){
+  int lpSupposedSize=MultiByteToWideChar
+    (CP_ACP,0,pxRawLine,-1,null,0);
+  wchar_t* lpWideLine=malloc(lpSupposedSize*sizeof(wchar_t));
+  int lpActualSize=MultiByteToWideChar
+    (CP_ACP,0,pxRawLine,-1,lpWideLine,lpSupposedSize);
+  assert(lpSupposedSize==lpActualSize);
+  ccMsgbox(lpWideLine);
+  free(lpWideLine);
+}//+++
+
+void ccComboBoxAddItem(HWND pxTarget, LPCTSTR pxItem){
   assert(pxTarget!=null);
   assert(pxItem!=null);
   //[TODO]::type check
@@ -61,24 +81,46 @@ int ccComboBoxGetSelectedIndex(const HWND const pxHost){
   return -1;
 }//+++
 
+void ccSetAlwaysOnTop(const HWND const pxWindow){
+  //[NOTYET]::
+  /**
+   if(!ccIsTypeOf("Window")){
+     assert(false);
+     return SendMessage(pxHost , CB_GETCURSEL , 0 , 0);
+   }
+   */
+  SetWindowPos(
+    pxWindow , HWND_TOPMOST ,
+    0 , 0 , 0 , 0 , SWP_NOMOVE | SWP_NOSIZE
+  );
+}//+++
+
+HBRUSH ccSetStaticBackColor(
+  const HDC pxContext, COLORREF pxColor
+){
+  assert(pxContext!=null);
+  SetBkColor(pxContext,pxColor);
+  return CreateSolidBrush(pxColor);
+}//+++
+
 //=== inner ** EcRect
 
 typedef struct{
   int cmX,cmY,cmW,cmH;
 }EcRect;
 
-void ccRectInit(EcRect* const self){
-  self->cmX=8;
-  self->cmY=8;
-  self->cmW=8;
-  self->cmH=8;
+void ccRectInit(EcRect* const pxHost){
+  pxHost->cmX=8;
+  pxHost->cmY=8;
+  pxHost->cmW=8;
+  pxHost->cmH=8;
 }//+++
 
-void ccRectInitWith(EcRect* const self, int pxX, int pxY, int pxW, int pxH){
-  self->cmX=pxX;
-  self->cmY=pxY;
-  self->cmW=pxW;
-  self->cmH=pxH;
+void ccRectInitWith(EcRect* const pxHost, int pxX, int pxY, int pxW, int pxH){
+  pxHost->cmX=pxX;
+  pxHost->cmY=pxY;
+  pxHost->cmW=pxW;
+  pxHost->cmH=pxH;
 }//+++
 
 void ccRectClone(EcRect* const pxHost, const EcRect* const pxGuest){
@@ -88,24 +130,24 @@ void ccRectClone(EcRect* const pxHost, const EcRect* const pxGuest){
   pxHost->cmH=pxGuest->cmH;
 }//+++
 
-void ccRectSetLocation(EcRect* const self, int pxX, int pxY){
-  self->cmX=pxX;
-  self->cmY=pxY;
+void ccRectSetLocation(EcRect* const pxHost, int pxX, int pxY){
+  pxHost->cmX=pxX;
+  pxHost->cmY=pxY;
 }//+++
 
-void ccRectSetSize(EcRect* const self, int pxW, int pxH){
-  self->cmW=pxW;
-  self->cmH=pxH;
+void ccRectSetSize(EcRect* const pxHost, int pxW, int pxH){
+  pxHost->cmW=pxW;
+  pxHost->cmH=pxH;
 }//+++
 
-void ccRectShiftLocation(EcRect* const self, int pxGapX, int pxGapY){
-  if(pxGapX!=0){self->cmX+=(self->cmW+pxGapX);}
-  if(pxGapY!=0){self->cmY+=(self->cmH+pxGapY);}
+void ccRectShiftLocation(EcRect* const pxHost, int pxGapX, int pxGapY){
+  if(pxGapX!=0){pxHost->cmX+=(pxHost->cmW+pxGapX);}
+  if(pxGapY!=0){pxHost->cmY+=(pxHost->cmH+pxGapY);}
 }//+++
 
-void ccRectOffsetLocation(EcRect* const self, int pxOffsetX, int pxOffsetY){
-  self->cmX+=pxOffsetX;
-  self->cmY+=pxOffsetY;
+void ccRectOffsetLocation(EcRect* const pxHost, int pxOffsetX, int pxOffsetY){
+  pxHost->cmX+=pxOffsetX;
+  pxHost->cmY+=pxOffsetY;
 }//+++
 
 int ccRectGetEndX(const EcRect* const pxHost){
@@ -121,14 +163,14 @@ int ccRectGetEndY(const EcRect* const pxHost){
 //=== factory
 
 HWND ccMyLabel(
-  const HWND pxOwner,const EcRect* pxBound, const LPSTR pxText
+  const HWND pxOwner,const EcRect* pxBound, const LPCTSTR pxText
 ){
   assert(pxOwner != null);
   assert(pxBound != null);
   assert(pxText != null);
   return CreateWindow(
-    "STATIC",pxText,
-    WS_CHILD|WS_VISIBLE|SS_CENTER,
+    TEXT("STATIC"),pxText,
+    WS_CHILD|WS_VISIBLE|WS_BORDER|SS_CENTER,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,null,
     (HINSTANCE)GetWindowLong(pxOwner,GWL_HINSTANCE),
@@ -136,28 +178,28 @@ HWND ccMyLabel(
   );
 }//+++
 
-void ccMyButton(
-  HWND pxOwner,const EcRect* pxBound, LPSTR pxText, int pxID
+HWND ccMyButton(
+  const HWND pxOwner,const EcRect* pxBound, LPCTSTR pxText, int pxID
 ){
-  if(pxOwner == null){return;}
-  if(pxText == null){return;}
-  CreateWindow(
-    "BUTTON",pxText,
+  assert(pxOwner != null);
+  assert(pxText != null);
+  return CreateWindow(
+    TEXT("BUTTON"),pxText,
     WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,(HMENU)pxID,
     (HINSTANCE)GetWindowLong(pxOwner,GWL_HINSTANCE),
     null
   );
-}
+}//+++
 
-void ccMyMasterRadioButton(
-  HWND pxOwner,const EcRect* pxBound, LPSTR pxText, int pxID
+HWND ccMyMasterRadioButton(
+  const HWND pxOwner,const EcRect* pxBound, LPCTSTR pxText, int pxID
 ){
-  if(pxOwner == null){return;}
-  if(pxText == null){return;}
-  CreateWindow(
-    "BUTTON",pxText,
+  assert(pxOwner != null);
+  assert(pxText != null);
+  return CreateWindow(
+    TEXT("BUTTON"),pxText,
     WS_CHILD|WS_VISIBLE|WS_GROUP|BS_AUTORADIOBUTTON,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,(HMENU)pxID,
@@ -166,13 +208,13 @@ void ccMyMasterRadioButton(
   );
 }
 
-void ccMySlaveRadioButton(
-  HWND pxOwner,const EcRect* pxBound, LPSTR pxText, int pxID
+HWND ccMySlaveRadioButton(
+  const HWND pxOwner,const EcRect* pxBound, LPCTSTR pxText, int pxID
 ){
-  if(pxOwner == null){return;}
-  if(pxText == null){return;}
-  CreateWindow(
-    "BUTTON",pxText,
+  assert(pxOwner != null);
+  assert(pxText != null);
+  return CreateWindow(
+    TEXT("BUTTON"),pxText,
     WS_CHILD|WS_VISIBLE|BS_AUTORADIOBUTTON,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,(HMENU)pxID,
@@ -182,13 +224,13 @@ void ccMySlaveRadioButton(
 }
 
 HWND ccMyTextBox(
-  const HWND pxOwner,const EcRect* pxBound, const LPSTR pxText, int pxID
+  const HWND pxOwner,const EcRect* pxBound, const LPCTSTR pxText, int pxID
 ){
   assert(pxOwner != null);
   assert(pxBound != null);
   assert(pxText != null);
   return CreateWindow(
-    "EDIT",pxText,
+    TEXT("EDIT"),pxText,
     WS_CHILD|WS_VISIBLE|WS_BORDER|ES_LEFT,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,(HMENU)pxID,
@@ -198,13 +240,13 @@ HWND ccMyTextBox(
 }//+++
 
 HWND ccMyContentBox(
-  const HWND pxOwner,const EcRect* pxBound, const LPSTR pxText
+  const HWND pxOwner,const EcRect* pxBound, const LPCTSTR pxText
 ){
   assert(pxOwner != null);
   assert(pxBound != null);
   assert(pxText != null);
   return CreateWindow(
-    "EDIT",pxText,
+    TEXT("EDIT"),pxText,
     WS_CHILD|WS_VISIBLE|WS_BORDER|ES_RIGHT|WS_DISABLED,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,null,
@@ -214,13 +256,13 @@ HWND ccMyContentBox(
 }//+++
 
 HWND ccMyTextArea(
-  const HWND pxOwner,const EcRect* pxBound, const LPSTR pxText, int pxID
+  const HWND pxOwner,const EcRect* pxBound, const LPCTSTR pxText, int pxID
 ){
   assert(pxOwner != null);
   assert(pxBound != null);
   assert(pxText != null);
   return CreateWindow(
-    "EDIT",pxText,
+    TEXT("EDIT"),pxText,
     WS_CHILD | WS_VISIBLE | WS_BORDER
      | WS_HSCROLL | WS_VSCROLL |ES_AUTOHSCROLL | ES_AUTOVSCROLL 
      | ES_LEFT | ES_MULTILINE,
@@ -237,7 +279,7 @@ HWND ccMyCombobox(
   assert(pxOwner != null);
   assert(pxBound != null);
   return CreateWindow(
-    "COMBOBOX",null,
+    TEXT("COMBOBOX"),null,
     WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
     pxBound->cmX,pxBound->cmY,pxBound->cmW,pxBound->cmH,
     pxOwner,(HMENU)pxID,
@@ -248,11 +290,9 @@ HWND ccMyCombobox(
 
 //=== callback
 
-LRESULT CALLBACK ccProcessWindow(
-  HWND pxHandle,
-  UINT pxMessage,
-  WPARAM pxWordP,
-  LPARAM pxLongP
+LRESULT CALLBACK WndProc(
+  HWND pxHandle, UINT pxMessage,
+  WPARAM pxWord, LPARAM pxLong
 ){
   
   //-- draw-resource
@@ -265,43 +305,55 @@ LRESULT CALLBACK ccProcessWindow(
   static unsigned int pbModel =0;
   static TCHAR pbTextBuf[512];
   
-  //-- initiating
-  
   //-- action performed
+  cspbCallbackCounter++;
   switch(pxMessage){
     
-    case WM_CREATE:
+    case WM_CREATE:{
       
-      ccRectInitWith(&pbBoundaryBUF,2,2,300,24);
+      ccRectInitWith(&pbBoundaryBUF,10,10,320-10*3,24);
       pbLabel=ccMyLabel(pxHandle,&pbBoundaryBUF,TEXT("-test-"));
       
       ccRectInitWith(&pbBoundaryBUF,10,50,48,32);
-      ccMyButton(pxHandle,&pbBoundaryBUF,"add",ACTION_ADD);
+      ccMyButton(pxHandle,&pbBoundaryBUF,TEXT("add"),ACTION_ADD);
       
       ccRectShiftLocation(&pbBoundaryBUF,3,0);
-      ccMyButton(pxHandle,&pbBoundaryBUF,"quit",ACTION_QUIT);
+      ccMyButton(pxHandle,&pbBoundaryBUF,TEXT("quit"),ACTION_QUIT);
       
-      ccRectShiftLocation(&pbBoundaryBUF,0,3);
-      ccRectSetSize(&pbBoundaryBUF,160,22);
-      ccMyContentBox(pxHandle,&pbBoundaryBUF,"--shower! yeah!");
+    }return 0;
+    
+    case WM_CTLCOLORSTATIC:{
       
-    return 0;
-    
-    case WM_DESTROY:
-    return fsPover();
-    
-    case WM_KEYDOWN:
-    return fsPover();
-    
-    case WM_LBUTTONDOWN:
-    return 0;
-    
-    case WM_TIMER:
-    return 0;
-    
-    case WM_COMMAND:
+      if(pbLabel==(HWND)pxLong){
+        return (LRESULT)ccSetStaticBackColor(
+          (HDC)pxWord,
+          pbModel>7?
+            RGB(0xEE,0x33,0x33):
+            RGB(0xEE,0xEE,0xEE)
+        );
+      }//..?
       
-      switch(HIWORD(pxWordP)){
+    }return 0;
+    
+    case WM_CTLCOLOREDIT:{
+      ccTagINT("control color edit",(int)pxLong);
+    }return 0;
+    
+    case WM_DESTROY:{
+    }return fsPover();
+    
+    case WM_KEYDOWN:{
+    }return fsPover();
+    
+    case WM_LBUTTONDOWN:{
+    }return 0;
+    
+    case WM_TIMER:{
+    }return 0;
+    
+    case WM_COMMAND:{
+      
+      switch(HIWORD(pxWord)){
         
         case CBN_SELCHANGE:
         break;
@@ -310,11 +362,15 @@ LRESULT CALLBACK ccProcessWindow(
         
       }//..?
       
-      switch(LOWORD(pxWordP)){
+      switch(LOWORD(pxWord)){
         
         case ACTION_ADD:
           pbModel++;pbModel&=0x0F;
-          wsprintf(pbTextBuf,"roller:%d <\n",pbModel);
+          if(pbModel>7){
+            wsprintf(pbTextBuf,L"Over:%d <\n",pbModel);
+          }else{
+            wsprintf(pbTextBuf,L"Below:%d <\n",pbModel);
+          }
           SetWindowText(pbLabel,pbTextBuf);
         break;
         
@@ -326,40 +382,37 @@ LRESULT CALLBACK ccProcessWindow(
       
       }//..?
       
-    return 0;
+    }return 0;
     
-    case WM_PAINT:
+    case WM_PAINT:{
       lpContext=BeginPaint(pxHandle, &lpPainter);
       if(lpContext!=null)
       { 
-        wsprintf(pbTextBuf,"--by mingw32 gcc/c99 using w32api");
+        wsprintf(pbTextBuf,TEXT("--with mingw32 gcc/c99 using w32api"));
         TextOut(lpContext,2,200-24,pbTextBuf,lstrlen(pbTextBuf)&511);
       }
       EndPaint(pxHandle, &lpPainter);
-    return 0;
+    }return 0;
     
   }//..?
-  return DefWindowProc(pxHandle, pxMessage, pxWordP, pxLongP);
+  return DefWindowProc(pxHandle, pxMessage, pxWord, pxLong);
 }//***
 
 //=== entry
 
 int WINAPI WinMain(
-  HINSTANCE hInstance,
-  HINSTANCE hPrevInstance,
-  LPSTR lpCmdLine,
-  int nCmdSHow
+  HINSTANCE hInstance, HINSTANCE hPrevInstance,
+  LPSTR lpCmdLine, int nCmdSHow
 ){
   
   //-- get current working directory
-  TCHAR lpCWDPath[PATH_MAX];
-  TCHAR lpInitInfo[PATH_MAX+8];
-  if(getcwd(lpCWDPath,sizeof(lpCWDPath))!=null){
-    wsprintf(lpInitInfo,"with:\n%s\n",lpCWDPath);
+  if(GetCurrentDirectory(MAX_PATH+1,cspbWorkingDirectory)!=0){
+    TCHAR lpInitInfo[MAX_PATH+1+256];
+    wsprintf(lpInitInfo,L"with:\n%ls\n",cspbWorkingDirectory);
     ccMsgbox(lpInitInfo);
   }else{
     ccTagINT("--failed to get current working directory",255);
-  }
+  }//..?
   
   //-- local
   HWND lpMainFrame;
@@ -368,22 +421,22 @@ int WINAPI WinMain(
   
   //-- setup class
   lpWindowClass.style = CS_DISABLE;
-  lpWindowClass.lpfnWndProc = ccProcessWindow;
+  lpWindowClass.lpfnWndProc = WndProc;
   lpWindowClass.cbClsExtra = lpWindowClass.cbWndExtra = 0;
   lpWindowClass.hInstance = hInstance;
-  lpWindowClass.hIcon = LoadIcon(null, IDI_APPLICATION);
+  lpWindowClass.hIcon = LoadIcon(null, IDI_WINLOGO);
   lpWindowClass.hCursor = LoadCursor(null, IDC_ARROW);
   lpWindowClass.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
   lpWindowClass.lpszMenuName = null;
-  lpWindowClass.lpszClassName = "MYCLASS";
+  lpWindowClass.lpszClassName = TEXT("MYCLASS");
   if(!RegisterClass(&lpWindowClass)){
-    ccTagINT("--failed to reggist class",255);
+    ccTagINT("--failed to register class",255);
     return -1;
   }//..?
   
   //-- create window 
   lpMainFrame = CreateWindow(
-    "MYCLASS",APP_TITLE,
+    TEXT("MYCLASS"),APP_TITLE,
     WS_DLGFRAME | WS_VISIBLE, 
     CW_USEDEFAULT,CW_USEDEFAULT,
     320,240,
@@ -401,6 +454,7 @@ int WINAPI WinMain(
   }//..~
   
   //-- exit
+  ccTagINT("--for callback be called ",cspbCallbackCounter);
   ccTagINT("--exit with",0);
   return lpMessage.wParam;
   
